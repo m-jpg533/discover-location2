@@ -1,0 +1,46 @@
+!DOCTYPE html>
+<html>
+<head>
+    <title>位置回報</title>
+</head>
+<body>
+    <h1>📍 回報我的位置</h1>
+    <button onclick="sendLocation()">送出位置</button>
+    <p>請改用預設瀏覽器開啟此網頁  (在手機右下角 三個點點一下跳出網頁然後在按藍色框框就可以跳出網頁在按送出位置></p>                      </p>
+ <p id="status"></p>
+
+    <script>
+        function sendLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const data = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    };
+
+                    fetch('/save-location', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        document.getElementById('status').innerText = '✅ 位置已送出！';
+                        console.log(result);
+                    })
+                    .catch(error => {
+                        document.getElementById('status').innerText = '❌ 發送失敗';
+                        console.error(error);
+                    });
+                }, function(error) {
+                    document.getElementById('status').innerText = '❌ 取得位置失敗';
+                });
+            } else {
+                alert("瀏覽器不支援地理定位功能。");
+            }
+        }
+    </script>
+</body>
+</html>
