@@ -1,41 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>追蹤中</title>
+<meta charset="utf-8">
+<title>📡 位置追蹤</title>
 </head>
 <body>
 
 <h2>📡 位置上傳中...</h2>
+<h3 id="address">尚未取得地址</h3>
+
+<button onclick="startTracking()">開始追蹤</button>
 
 <script>
-let lastSend = 0;
+function startTracking() {
+  navigator.geolocation.watchPosition(async position => {
 
-navigator.geolocation.watchPosition(pos => {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
 
-  let now = Date.now();
+    let address = "取得中...";
 
-  // 每5秒送一次（防止爆量）
-  if (now - lastSend > 5000) {
-    lastSend = now;
+    try {
+      let res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      let data = await res.json();
+      address = data.display_name;
+    } catch (e) {
+      console.log("地址取得失敗");
+    }
 
-    fetch("/save-location", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
+    document.getElementById("address").innerText = address;
+
+    fetch('/save-location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude
+        latitude: lat,
+        longitude: lng,
+        address: address
       })
     });
 
-    console.log("已送出GPS");
-  }
-
-}, err => {
-  alert("請開啟定位權限");
-}, {
-  enableHighAccuracy: true
-});
+  }, err => console.error(err), {
+    enableHighAccuracy: true
+  });
+}
 </script>
 
 </body>
