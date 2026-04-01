@@ -1,81 +1,28 @@
-from flask import Flask, request, jsonify, render_template
-import sqlite3
-import os
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-DB = "location.db"
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 🔥 初始化資料庫
-def init_db():
-    conn = sqlite3.connect(DB)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            latitude REAL,
-            longitude REAL,
-            address TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+locations = {}
 
-init_db()
-
-# 🟢 手機頁（傳位置）
 @app.route('/')
 def index():
-    return render_template('track.html')
+    return render_template("map.html")
 
-# 🔵 地圖頁
-@app.route('/map')
-def map_page():
-    return render_template('map.html')
+# 📍 接收 GPS
+@socketio.on('send_location')
+def handle_location(data):
+    user = data['user']
 
-# 📍 存位置 + 地址
-@app.route('/save-location', methods=['POST'])
-def save_location():
-    data = request.get_json()
+    locations[user] = {
+        "lat": data['lat'],
+        "lng": data['lng'],
+        "acc": data.get('acc', 999)
+    }
 
-    lat = data.get("latitude")
-    lng = data.get("longitude")
-    address = data.get("address")
+    # 🔥 即時廣播給所有人
+    emit('update_map', locations, broadcast=True)
 
-    conn = sqlite3.connect(DB)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "INSERT INTO locations (latitude, longitude, address) VALUES (?, ?, ?)",
-        (lat, lng, address)
-    )
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "ok"})
-
-# 📡 取得資料
-@app.route('/get-locations')
-def get_locations():
-    conn = sqlite3.connect(DB)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT latitude, longitude, address
-        FROM locations
-        ORDER BY id ASC
-    """)
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    return jsonify([
-        {"lat": r[0], "lng": r[1], "address": r[2]}
-        for r in rows
-    ])
-
-# 🚀 Render 用
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    socketio.run(app, host="0.0.0.0", port=5000)
