@@ -1,60 +1,135 @@
 
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 <head>
-  <title>Google 地圖定位</title>
-  <style>
-    #map { height: 100vh; width: 100%; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>即時定位（WebSocket版）</title>
+
+<style>
+  body { margin: 0; font-family: Arial; }
+  #map { width: 100%; height: 100vh; }
+</style>
 </head>
+
 <body>
 
 <div id="map"></div>
 
-<script>
-let map;
-let marker;
+<!-- 🔌 WebSocket -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
+<script>
+const socket = io();
+
+let map;
+let markers = {};
+let lastPos = {};
+
+// 🗺 初始化地圖
 function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
-    zoom: 16,
-    center: { lat: 25.033, lng: 121.5654 }
+    zoom: 17,
+    center: { lat: 25.0330, lng: 121.5654 }
   });
 
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(position => {
-      const pos = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude
-      };
+  startTracking();
+}
 
-      map.setCenter(pos);
+// 📱 啟動 GPS 傳送
+function startTracking() {
+  const user = localStorage.getItem("user") || generateUser();
+  localStorage.setItem("user", user);
 
-      if (marker) {
-        marker.setPosition(pos);
-      } else {
-        marker = new google.maps.Marker({
-          position: pos,
-          map: map
-        });
-      }
-
-      // 🔥 傳回 Flask
-      fetch("/save-location", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(pos)
-      });
-
+  navigator.geolocation.watchPosition(pos => {
+    socket.emit("send_location", {
+      user: user,
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      acc: pos.coords.accuracy
     });
+  }, err => {
+    console.error("GPS錯誤:", err);
+    alert("請開啟定位權限");
+  }, {
+    enableHighAccuracy: true
+  });
+}
+
+// 🔥 即時接收更新
+socket.on("update_map", data => {
+
+  for (let user in data) {
+    const d = data[user];
+
+    // ❗ 防飄移（精度過濾）
+    if (d.acc > 50) continue;
+
+    const newPos = { lat: d.lat, lng: d.lng };
+
+    if (!shouldUpdate(user, newPos)) continue;
+
+    if (!markers[user]) {
+      markers[user] = new google.maps.marker.AdvancedMarkerElement({
+        position: newPos,
+        map: map,
+        title: user
+      });
+    } else {
+      smoothMove(markers[user], newPos);
+    }
   }
+});
+
+// 🔥 防飄移判斷
+function shouldUpdate(user, newPos) {
+  if (!lastPos[user]) {
+    lastPos[user] = newPos;
+    return true;
+  }
+
+  const dx = Math.abs(lastPos[user].lat - newPos.lat);
+  const dy = Math.abs(lastPos[user].lng - newPos.lng);
+
+  // 約 5~10 公尺內不更新
+  if (dx + dy < 0.00005) return false;
+
+  lastPos[user] = newPos;
+  return true;
+}
+
+// 🚗 平滑移動（像 Uber）
+function smoothMove(marker, newPos) {
+  const current = marker.position;
+
+  let step = 0;
+  const steps = 10;
+
+  const latStep = (newPos.lat - current.lat) / steps;
+  const lngStep = (newPos.lng - current.lng) / steps;
+
+  const interval = setInterval(() => {
+    step++;
+
+    const lat = current.lat + latStep * step;
+    const lng = current.lng + lngStep * step;
+
+    marker.position = { lat, lng };
+
+    if (step >= steps) clearInterval(interval);
+  }, 50);
+}
+
+// 🆔 自動產生 user ID
+function generateUser() {
+  return "user_" + Math.random().toString(36).substring(2, 8);
 }
 </script>
 
-<!-- ⚠️ 換成你的 API KEY -->
-
+<!-- 🌍 Google Maps API（新版正確寫法） -->
 <script async
   src="https://maps.googleapis.com/maps/api/js?key=AIzaSyClqtKjECMTCmQX-MDKJnZ9f9zQELKhTME&callback=initMap&loading=async&libraries=marker">
 </script>
+
 </body>
 </html>
